@@ -1,0 +1,220 @@
+# RECONCILIATION SYSTEM PROMPT & ARCHITECTURE
+
+## 🎯 АРХИТЕКТУРА
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         FRONTEND                             │
+│                     (Blade / Vue / Livewire)                │
+└─────────────────────────────┬───────────────────────────────┘
+                              │
+┌─────────────────────────────▼───────────────────────────────┐
+│                      LARAVEL APP                             │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │   Parsers    │  │   Matchers   │  │  AI Service  │      │
+│  │              │  │              │  │              │      │
+│  │ • QuickBooks │  │ • Direct     │  │ • Claude API │      │
+│  │ • eBay       │  │ • Split      │  │ • Gemini API │      │
+│  │ • Amazon     │  │ • Discount   │  │ • Analysis   │      │
+│  │ • Gmail      │  │ • Fuzzy      │  │ • Learning   │      │
+│  └──────────────┘  └──────────────┘  └──────────────┘      │
+│                                                              │
+│  ┌──────────────────────────────────────────────────┐      │
+│  │              Matching Rules Engine                │      │
+│  │         (Dynamic rules from DB + AI)             │      │
+│  └──────────────────────────────────────────────────┘      │
+│                                                              │
+└─────────────────────────────┬───────────────────────────────┘
+                              │
+┌─────────────────────────────▼───────────────────────────────┐
+│                        MySQL DB                              │
+├─────────────────────────────────────────────────────────────┤
+│  transactions │ orders │ matches │ rules │ ai_suggestions  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## 🗄️ DATABASE SCHEMA (MySQL)
+
+```sql
+-- Транзакции из QuickBooks
+CREATE TABLE transactions (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    external_id VARCHAR(100) NULL,
+    transaction_date DATE NOT NULL,
+    amount DECIMAL(12, 2) NOT NULL,
+    vendor VARCHAR(100) NULL,
+    vendor_raw VARCHAR(255) NULL,  -- Оригинальное описание
+    memo TEXT NULL,
+    category VARCHAR(50) NULL,
+    source VARCHAR(50) DEFAULT 'quickbooks',
+    card_last4 VARCHAR(4) NULL,
+    
+    -- Matching status
+    match_status ENUM('pending', 'matched', 'partial', 'unmatched') DEFAULT 'pending',
+    match_confidence DECIMAL(3, 2) NULL,  -- 0.00 - 1.00
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    INDEX idx_date (transaction_date),
+    INDEX idx_amount (amount),
+    INDEX idx_vendor (vendor),
+    INDEX idx_status (match_status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Заказы из различных платформ
+CREATE TABLE orders (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    order_id VARCHAR(100) NOT NULL,
+    platform VARCHAR(50) NOT NULL,
+    store VARCHAR(100) NULL,
+    order_date DATE NOT NULL,
+    amount DECIMAL(12, 2) NOT NULL,
+    original_amount DECIMAL(12, 2) NULL,
+    discount DECIMAL(12, 2) DEFAULT 0,
+    client_id VARCHAR(100) NULL,
+    client_email VARCHAR(255) NULL,
+    
+    -- Matching status
+    match_status ENUM('pending', 'matched', 'partial', 'unmatched') DEFAULT 'pending',
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    UNIQUE KEY unique_order (order_id, platform),
+    INDEX idx_date (order_date),
+    INDEX idx_amount (amount),
+    INDEX idx_platform (platform),
+    INDEX idx_status (match_status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Товары в заказах
+CREATE TABLE order_items (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    order_id BIGINT UNSIGNED NOT NULL,
+    item_name TEXT NULL,
+    quantity INT DEFAULT 1,
+    price DECIMAL(12, 2) NULL,
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Результаты сопоставления
+CREATE TABLE matches (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    match_type ENUM('direct', 'split', 'discount', 'fuzzy', 'manual', 'ai_suggested') NOT NULL,
+    confidence DECIMAL(3, 2) NOT NULL DEFAULT 1.00,
+    
+    order_id BIGINT UNSIGNED NOT NULL,
+    
+    -- Для direct и discount (одна транзакция)
+    transaction_id BIGINT UNSIGNED NULL,
+    
+    -- Для split (несколько транзакций) - JSON array of IDs
+    transaction_ids JSON NULL,
+    
+    amount_difference DECIMAL(12, 2) DEFAULT 0,
+    discount_amount DECIMAL(12, 2) NULL,
+    discount_type VARCHAR(50) NULL,
+    
+    -- AI related
+    ai_suggested BOOLEAN DEFAULT FALSE,
+    ai_explanation TEXT NULL,
+    
+    -- Verification
+    verified BOOLEAN DEFAULT FALSE,
+    verified_by VARCHAR(100) NULL,
+    verified_at TIMESTAMP NULL,
+    
+    notes TEXT NULL,
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+    FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Динамические правила matching (обучаемые!)
+CREATE TABLE matching_rules (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    description TEXT NULL,
+    
+    -- Условия применения
+    vendor_pattern VARCHAR(255) NULL,  -- Regex или LIKE
+    platform VARCHAR(50) NULL,
+    amount_min DECIMAL(12, 2) NULL,
+    amount_max DECIMAL(12, 2) NULL,
+    
+    -- Параметры matching
+    amount_tolerance DECIMAL(12, 2) DEFAULT 0.10,
+    date_tolerance_days INT DEFAULT 3,
+    discount_tolerance DECIMAL(12, 2) DEFAULT 0,
+    allow_splits BOOLEAN DEFAULT TRUE,
+    max_split_parts INT DEFAULT 5,
+    
+    -- Приоритет и статус
+    priority INT DEFAULT 100,
+    is_active BOOLEAN DEFAULT TRUE,
+    
+    -- AI related
+    created_by ENUM('manual', 'ai_suggested') DEFAULT 'manual',
+    ai_confidence DECIMAL(3, 2) NULL,
+    times_used INT DEFAULT 0,
+    success_rate DECIMAL(5, 2) NULL,
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- AI предложения (для review)
+CREATE TABLE ai_suggestions (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    type ENUM('match', 'rule', 'pattern', 'anomaly') NOT NULL,
+    
+    -- Контекст
+    transaction_id BIGINT UNSIGNED NULL,
+    order_id BIGINT UNSIGNED NULL,
+    
+    -- Предложение
+    suggestion JSON NOT NULL,
+    explanation TEXT NOT NULL,
+    confidence DECIMAL(3, 2) NOT NULL,
+    
+    -- Статус review
+    status ENUM('pending', 'accepted', 'rejected', 'modified') DEFAULT 'pending',
+    reviewed_by VARCHAR(100) NULL,
+    reviewed_at TIMESTAMP NULL,
+    review_notes TEXT NULL,
+    
+    -- Обучение
+    feedback_applied BOOLEAN DEFAULT FALSE,
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE,
+    FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
+## 🧠 AI LOGIC
+
+### AI Learning Loop
+1.  **SEE**: AI видит новую транзакцию.
+2.  **THINK**: Применяет известные правила.
+3.  **ACT**: Предлагает решение или задаёт вопрос.
+4.  **FEEDBACK**: Пользователь подтверждает/исправляет.
+5.  **LEARN**: AI обновляет свои правила.
+
+### Confidence Levels
+-   **95-100%**: Auto action (Auto-match).
+-   **80-95%**: Suggest & Confirm.
+-   **60-80%**: Suggest multiple options.
+-   **40-60%**: Ask clarifying question.
+-   **0-40%**: Admit unknown / Request help.
+

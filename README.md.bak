@@ -1,0 +1,26 @@
+# FraudPrivet
+
+FraudPrivet is a Laravel-based Reconciliation System designed to automate the matching of financial transactions (from QuickBooks/Bank) with e-commerce orders (Amazon, eBay, etc.).
+
+## Architecture
+
+-   **Backend**: Laravel + MySQL
+-   **Frontend**: Blade Templates + Vue.js (optional)
+-   **Data Source**: Chrome Extension (Financial Mode) & APIs
+-   **AI**: Integration with Claude/Gemini for intelligent matching (fuzzy logic, discounts, split payments).
+
+## Key Features
+
+-   **Automated Matching**: Rules-based engine to match transactions to orders.
+-   **AI Assistant**: Analyzes unmatched transactions and suggests matches.
+-   **Financial Mode**: Deep parsing of order details (tax, shipping, discounts) via Chrome Extension.
+-   **Real-time Ready**: Architecture supports webhook integration for future real-time updates.
+
+## Setup
+
+1.  Clone the repository.
+2.  Run `composer install`.
+3.  Copy `.env.example` to `.env` and configure database.
+4.  Run `php artisan migrate`.
+5.  Run `php artisan serve`.
+
