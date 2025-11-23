@@ -6,6 +6,7 @@ use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\MatchController;
 use App\Http\Controllers\ImportController;
+use App\Http\Controllers\MatchingRuleController;
 
 Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
@@ -44,3 +45,13 @@ Route::get('/import', [ImportController::class, 'index'])->name('import.index');
 Route::post('/import/transactions', [ImportController::class, 'importTransactions'])->name('import.transactions');
 Route::post('/import/orders', [ImportController::class, 'importOrders'])->name('import.orders');
 Route::post('/import/auto-match', [ImportController::class, 'runAutoMatch'])->name('import.auto-match');
+
+// Matching Rules
+Route::get('/rules', [MatchingRuleController::class, 'index'])->name('rules.index');
+Route::get('/rules/create', [MatchingRuleController::class, 'create'])->name('rules.create');
+Route::post('/rules', [MatchingRuleController::class, 'store'])->name('rules.store');
+Route::get('/rules/{rule}', [MatchingRuleController::class, 'show'])->name('rules.show');
+Route::get('/rules/{rule}/edit', [MatchingRuleController::class, 'edit'])->name('rules.edit');
+Route::put('/rules/{rule}', [MatchingRuleController::class, 'update'])->name('rules.update');
+Route::delete('/rules/{rule}', [MatchingRuleController::class, 'destroy'])->name('rules.destroy');
+Route::post('/rules/{rule}/toggle', [MatchingRuleController::class, 'toggle'])->name('rules.toggle');
