@@ -15,6 +15,7 @@
                     <a href="{{ route('transactions.index') }}" class="text-gray-700 hover:text-blue-600 font-medium">Transactions</a>
                     <a href="{{ route('orders.index') }}" class="text-gray-700 hover:text-blue-600 font-medium">Orders</a>
                     <a href="{{ route('matches.index') }}" class="text-gray-700 hover:text-blue-600 font-medium">Matches</a>
+                    <a href="{{ route('import.index') }}" class="text-gray-700 hover:text-blue-600 font-medium">Import</a>
                 </div>
                 <div class="text-gray-500 text-sm">{{ date('M d, Y') }}</div>
             </div>

@@ -5,6 +5,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\MatchController;
+use App\Http\Controllers\ImportController;
 
 Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
@@ -37,3 +38,9 @@ Route::post('/matches/{match}/reject', [MatchController::class, 'reject'])->name
 // AI Suggestions
 Route::post('/suggestions/{suggestion}/accept', [MatchController::class, 'acceptSuggestion'])->name('suggestions.accept');
 Route::post('/suggestions/{suggestion}/reject', [MatchController::class, 'rejectSuggestion'])->name('suggestions.reject');
+
+// Import
+Route::get('/import', [ImportController::class, 'index'])->name('import.index');
+Route::post('/import/transactions', [ImportController::class, 'importTransactions'])->name('import.transactions');
+Route::post('/import/orders', [ImportController::class, 'importOrders'])->name('import.orders');
+Route::post('/import/auto-match', [ImportController::class, 'runAutoMatch'])->name('import.auto-match');
